@@ -72,7 +72,12 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
 
-  private camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  private camera!: THREE.OrthographicCamera | THREE.PerspectiveCamera;
+
+  public showContextMenu = false;
+  public contextMenuX = 0;
+  public contextMenuY = 0;
+  public contextMenuObject: THREE.Object3D | null = null;
   private persCamera!: THREE.PerspectiveCamera;
   private orthoCamera!: THREE.OrthographicCamera;
   private frustumSize = 40;
@@ -302,6 +307,14 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
     });
   }
 
+  private clearCollisionHighlights() {
+    this.hRoot.traverse((node) => {
+      if (node instanceof THREE.Mesh && node.material && 'emissive' in node.material) {
+        (node.material as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
+      }
+    });
+  }
+
   private checkAndHighlightCollisions(targetObj: THREE.Object3D) {
     if (!targetObj) return;
 
@@ -356,7 +369,8 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
     }
   }
 
-  ngAfterViewInit(): void {
+  ngAfterViewInit() {
+    this.rendererContainer.nativeElement.addEventListener('contextmenu', (e: Event) => e.preventDefault());
     this.initMainScene();
     this.initCubeScene();
     this.animate();
@@ -561,44 +575,96 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   }
 
   private onPointerDown(event: PointerEvent): void {
-    if ((this.transformControl as any).axis !== null) {
-      return; // Do nothing if interacting with transform handles
+    if (this.isDraggingShape) return;
+    if ((this.transformControl as any).axis !== null) return; // Allow gizmo translations naturally
+    
+    // Hide context menu automatically on any click natively
+    if (this.showContextMenu) {
+      this.showContextMenu = false;
+      this.cdr.detectChanges();
     }
+    
+    if (event.button !== 0 && event.button !== 2) return;
 
     const container = this.rendererContainer.nativeElement;
     const rect = container.getBoundingClientRect();
-
     this.pointer.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
 
     this.raycaster.setFromCamera(this.pointer, this.camera);
+    const intersects = this.raycaster.intersectObject(this.hRoot, true);
+    
+    const validIntersects = intersects.filter(hit => 
+      hit.object !== this.ghostMesh && 
+      hit.object !== this.collisionHelper &&
+      hit.object.visible
+    );
 
-    const intersects = this.raycaster.intersectObject(this.hRoot, true); // deeply search root
+    if (validIntersects.length > 0) {
+      let selectedObject: THREE.Object3D | null = validIntersects[0].object;
 
-    // Find highest z-index object that is NOT locked computationally!
-    const validIntersect = intersects.find(intersect => {
-      let current: THREE.Object3D | null = intersect.object;
-      while (current && current !== this.hRoot) {
-        if (current.userData['locked']) return false;
-        current = current.parent;
+      while (selectedObject && selectedObject !== this.hRoot) {
+        if (selectedObject instanceof ParametricShelf) break;
+        if (selectedObject.name.includes('Shelf') || selectedObject.name.includes('Box') || selectedObject.name.includes('Can') || selectedObject.name.includes('Sphere') || selectedObject.name.includes('Cylinder') || selectedObject.name.includes('Cone')) break;
+        selectedObject = selectedObject.parent;
       }
-      return true; // Reached root without finding any locks
-    });
 
-    if (validIntersect) {
-      // Walk up to find the top-level group inside hRoot (the Prefab)
-      let targetObj: THREE.Object3D = validIntersect.object;
-      let current: THREE.Object3D | null = targetObj;
-      while (current && current.parent && current.parent !== this.hRoot) {
-        current = current.parent;
+      if (selectedObject && selectedObject !== this.hRoot) {
+        this.attachToTransform(selectedObject);
+        this.checkAndHighlightCollisions(selectedObject);
+        
+        if (event.button === 2) {
+           this.showContextMenu = true;
+           this.contextMenuX = event.clientX;
+           this.contextMenuY = event.clientY;
+           this.contextMenuObject = selectedObject;
+           this.cdr.detectChanges();
+        }
       }
-      if (current) targetObj = current;
-
-      this.attachToTransform(targetObj);
     } else {
-      this.detachFromTransform();
+        if (event.button === 0) {
+           this.detachFromTransform();
+           this.clearCollisionHighlights();
+        } else if (event.button === 2 && this.transformControl.object) {
+           this.showContextMenu = true;
+           this.contextMenuX = event.clientX;
+           this.contextMenuY = event.clientY;
+           this.contextMenuObject = this.transformControl.object;
+           this.cdr.detectChanges();
+        }
     }
   }
+
+  deleteSelectedObject() {
+    this.showContextMenu = false;
+    const obj = this.contextMenuObject || this.transformControl.object;
+    if (obj) {
+      this.detachFromTransform();
+      const parent = obj.parent;
+      if (parent) {
+        parent.remove(obj);
+        // Auto-recalculate surrounding parameter boundaries
+        if (parent instanceof ParametricShelf) {
+          parent.updateLayout();
+        }
+      }
+
+      // Explicit garbage collection unmounting to prevent ghost GPU allocations natively!
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const mesh = child as THREE.Mesh;
+          if (mesh.geometry) mesh.geometry.dispose();
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
+            else mesh.material.dispose();
+          }
+        }
+      });
+
+      this.contextMenuObject = null;
+      this.cdr.detectChanges();
+    }
+  };
 
   private initCubeScene(): void {
     const container = this.cubeSceneContainer.nativeElement;

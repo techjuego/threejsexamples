@@ -78,6 +78,12 @@
     </div>
   </div>
 
+  <div class="context-menu" *ngIf="showContextMenu" [style.left.px]="contextMenuX" [style.top.px]="contextMenuY">
+    <div class="menu-item delete" (click)="deleteSelectedObject()">
+      <span class="icon">🗑️</span> Delete Object
+    </div>
+  </div>
+
   <div id="app" class="main-scene" #rendererContainer (dragover)="onCanvasDragOver($event)"
     (drop)="onCanvasDrop($event)">
   </div>
