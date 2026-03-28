@@ -1,0 +1,117 @@
+<ng-template #nodeTemplate let-nodes>
+  <ul class="hierarchy-list">
+    <li *ngFor="let node of nodes" class="hierarchy-item" [class.selected]="transformControl.object === node"
+      draggable="true" (dragstart)="onDragStart($event, node)" (dragover)="onDragOver($event, node)"
+      (drop)="onDrop($event, node)">
+
+      <div class="node-content" [class.locked]="node.userData['locked']" [class.hidden]="!node.visible"
+        (click)="selectNode(node)">
+        <span class="expand-icon" (click)="toggleExpand(node, $event)">
+          <span *ngIf="node.children.length">{{ node.userData['expanded'] ? '▼' : '▶' }}</span>
+          <span *ngIf="!node.children.length" class="empty-icon"></span>
+        </span>
+
+        <span class="node-name">{{ node.name || node.type }}</span>
+
+        <div class="actions">
+          <button class="action-btn" (click)="toggleLock(node, $event)"
+            [title]="node.userData['locked'] ? 'Unlock' : 'Lock'">
+            {{ node.userData['locked'] ? '🔒' : '🔓' }}
+          </button>
+          <button class="action-btn" (click)="toggleVisibility(node, $event)" [title]="node.visible ? 'Hide' : 'Show'">
+            {{ node.visible ? '👁️' : '👁️‍🗨️' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Recursive Children -->
+      <ng-container *ngIf="node.userData['expanded'] && node.children.length">
+        <ng-container *ngTemplateOutlet="nodeTemplate; context: { $implicit: node.children }"></ng-container>
+      </ng-container>
+    </li>
+  </ul>
+</ng-template>
+
+<div class="three-container">
+
+  <div class="hierarchy-panel">
+    <div class="panel-header">Add Shape</div>
+    <div class="shape-palette">
+      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Box')"
+        (dragend)="onShapeDragEnd($event)">📦 Box</div>
+      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Sphere')"
+        (dragend)="onShapeDragEnd($event)">⚽ Sphere</div>
+      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Cylinder')"
+        (dragend)="onShapeDragEnd($event)">🛢️ Cylinder</div>
+      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Cone')"
+        (dragend)="onShapeDragEnd($event)">🔺 Cone</div>
+      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Cabinet')"
+        (dragend)="onShapeDragEnd($event)">🚪 Cabinet</div>
+      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Shelf')"
+        (dragend)="onShapeDragEnd($event)">➖ Shelf</div>
+    </div>
+
+    <div class="panel-header">Products</div>
+    <div class="shape-palette">
+      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Bottom Box')"
+        (dragend)="onShapeDragEnd($event)">📦 Bottom Box</div>
+      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Top Can')"
+        (dragend)="onShapeDragEnd($event)">🥫 Top Can</div>
+    </div>
+
+    <div class="panel-header">Hierarchy</div>
+    <div class="panel-content" (dragover)="onDragOver($event, hRoot)" (drop)="onDrop($event, hRoot)">
+      <ng-container *ngIf="hRoot">
+        <ng-container *ngTemplateOutlet="nodeTemplate; context: { $implicit: hRoot.children }"></ng-container>
+      </ng-container>
+    </div>
+  </div>
+
+  <div class="transform-overlay" *ngIf="showOverlay" [style.left.px]="overlayX" [style.top.px]="overlayY">
+    <div class="tooltip-values">
+      <div class="tooltip-row"><span class="axis-label x">X</span> {{ tooltipData.x | number:'1.2-2' }}{{
+        currentTransformMode === 'rotate' ? '°' : '' }}</div>
+      <div class="tooltip-row"><span class="axis-label y">Y</span> {{ tooltipData.y | number:'1.2-2' }}{{
+        currentTransformMode === 'rotate' ? '°' : '' }}</div>
+      <div class="tooltip-row"><span class="axis-label z">Z</span> {{ tooltipData.z | number:'1.2-2' }}{{
+        currentTransformMode === 'rotate' ? '°' : '' }}</div>
+    </div>
+  </div>
+
+  <div id="app" class="main-scene" #rendererContainer (dragover)="onCanvasDragOver($event)"
+    (drop)="onCanvasDrop($event)">
+  </div>
+
+  <div class="controls-toolbar">
+    <button (click)="toggleGrid()" [class.active]="gridVisible" title="Toggle Grid">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18" />
+      </svg>
+    </button>
+    <div class="divider"></div>
+    <button (click)="setTransformMode('translate')" [class.active]="currentTransformMode === 'translate'"
+      title="Translate">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M19 9l3 3-3 3M9 19l3 3 3-3M2 12h20M12 2v20" />
+      </svg>
+    </button>
+    <button (click)="setTransformMode('rotate')" [class.active]="currentTransformMode === 'rotate'" title="Rotate">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12a9 9 0 11-9-9c2.5 0 4.8 1 6.5 2.7l2.5 2.3M21 12V3M21 12h-9" />
+      </svg>
+    </button>
+    <button (click)="setTransformMode('scale')" [class.active]="currentTransformMode === 'scale'" title="Scale">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 3l-6 6M21 3v6M21 3h-6M3 21l6-6M3 21v-6M3 21h6M14.5 9.5L9.5 14.5" />
+      </svg>
+    </button>
+    <div class="divider"></div>
+    <button (click)="toggleSnap()" [class.active]="snapEnabled" title="Toggle Snap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 4h4v4H4zM16 4h4v4h-4zM4 16h4v4H4zM16 16h4v4h-4zM8 6h8M6 8v8M18 8v8M8 18h8" />
+      </svg>
+    </button>
+  </div>
+
+  <div id="cube-scene" class="cube-scene" #cubeSceneContainer></div>
+</div>
