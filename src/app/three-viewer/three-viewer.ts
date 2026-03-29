@@ -3,8 +3,6 @@ import { CommonModule } from '@angular/common';
 import * as THREE from 'three';
 // @ts-ignore
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-// @ts-ignore
-import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import ViewCubeControls from './view-cube-controls';
 import { InfiniteGridHelper } from './infinite-grid-helper';
 
@@ -41,7 +39,7 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   private cubeCamera!: THREE.PerspectiveCamera;
   private viewCube!: ViewCubeControls;
 
-  public transformControl!: TransformControls;
+  public selectedNode: THREE.Object3D | null = null;
   private gridHelperXZ!: InfiniteGridHelper;
   private gridHelperXY!: InfiniteGridHelper;
   private gridHelperYZ!: InfiniteGridHelper;
@@ -54,24 +52,19 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
 
   gridVisible = true;
   snapEnabled = false;
-  currentTransformMode: 'translate' | 'rotate' | 'scale' = 'translate';
-
   private animationId!: number;
   private lastOrthoQuaternion = new THREE.Quaternion();
-  public isDraggingTransform = false;
   private lastOrthographicFace?: number;
   private collisionHelper: THREE.BoxHelper | null = null;
-
-  // OVERLAY UI STATE
-  showOverlay = false;
-  overlayX = 0;
-  overlayY = 0;
-  tooltipData = { x: 0, y: 0, z: 0 };
 
   // HIERARCHY LOGIC
   selectNode(node: THREE.Object3D) {
     if (!node.userData['locked'] && node.visible) {
-      this.attachToTransform(node);
+      if (this.selectedNode !== node) {
+        if (this.selectedNode) this.clearCollisionHighlight(this.selectedNode);
+        this.selectedNode = node;
+        this.checkAndHighlightCollisions(node);
+      }
     }
   }
 
@@ -83,16 +76,20 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   toggleVisibility(node: THREE.Object3D, event: Event) {
     event.stopPropagation();
     node.visible = !node.visible;
-    if (!node.visible && this.transformControl.object === node) {
-      this.detachFromTransform();
+    if (!node.visible && this.selectedNode === node) {
+      this.clearCollisionHighlight(this.selectedNode);
+      this.selectedNode = null;
+      this.cdr.detectChanges();
     }
   }
 
   toggleLock(node: THREE.Object3D, event: Event) {
     event.stopPropagation();
     node.userData['locked'] = !node.userData['locked'];
-    if (node.userData['locked'] && this.transformControl.object === node) {
-      this.detachFromTransform();
+    if (node.userData['locked'] && this.selectedNode === node) {
+      this.clearCollisionHighlight(this.selectedNode);
+      this.selectedNode = null;
+      this.cdr.detectChanges();
     }
   }
 
@@ -169,75 +166,6 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
 
   toggleSnap() {
     this.snapEnabled = !this.snapEnabled;
-    this.applySnapSettings();
-  }
-
-  setTransformMode(mode: 'translate' | 'rotate' | 'scale') {
-    this.currentTransformMode = mode;
-    if (this.transformControl) {
-      this.transformControl.setMode(mode);
-      this.updateTransformAxes();
-    }
-  }
-
-  private updateTransformAxes() {
-    if (!this.transformControl) return;
-    const obj = this.transformControl.object;
-    if (!obj) return;
-
-    this.transformControl.showX = true;
-    this.transformControl.showY = true;
-    this.transformControl.showZ = true;
-  }
-
-  private attachToTransform(obj: THREE.Object3D) {
-    this.transformControl.attach(obj);
-    this.updateTransformAxes();
-    this.checkAndHighlightCollisions(obj);
-  }
-
-  private detachFromTransform() {
-    if (this.transformControl.object) {
-      this.clearCollisionHighlight(this.transformControl.object);
-    }
-    this.transformControl.detach();
-    this.showOverlay = false;
-    this.cdr.detectChanges();
-  }
-
-  private updateTooltip(obj: THREE.Object3D) {
-    const vector = new THREE.Vector3();
-    obj.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(obj);
-
-    box.getCenter(vector);
-    vector.y = box.max.y; // Hover above the object bounding box max
-
-    // Project the 3D world position into 2D screen space
-    vector.project(this.camera);
-
-    const container = this.rendererContainer.nativeElement;
-    const widthHalf = container.clientWidth / 2;
-    const heightHalf = container.clientHeight / 2;
-
-    this.overlayX = (vector.x * widthHalf) + widthHalf;
-    this.overlayY = -(vector.y * heightHalf) + heightHalf - 40; // Pixel offset upwards
-
-    if (this.currentTransformMode === 'translate') {
-      this.tooltipData.x = obj.position.x;
-      this.tooltipData.y = obj.position.y;
-      this.tooltipData.z = obj.position.z;
-    } else if (this.currentTransformMode === 'rotate') {
-      this.tooltipData.x = THREE.MathUtils.radToDeg(obj.rotation.x);
-      this.tooltipData.y = THREE.MathUtils.radToDeg(obj.rotation.y);
-      this.tooltipData.z = THREE.MathUtils.radToDeg(obj.rotation.z);
-    } else if (this.currentTransformMode === 'scale') {
-      this.tooltipData.x = obj.scale.x;
-      this.tooltipData.y = obj.scale.y;
-      this.tooltipData.z = obj.scale.z;
-    }
-
-    this.cdr.detectChanges(); // Trigger Angular to update HUD
   }
 
   private clearCollisionHighlight(targetObj: THREE.Object3D) {
@@ -297,18 +225,7 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
     }
   }
 
-  private applySnapSettings() {
-    if (!this.transformControl) return;
-    if (this.snapEnabled) {
-      this.transformControl.setTranslationSnap(1);
-      this.transformControl.setRotationSnap(Math.PI / 8);
-      this.transformControl.setScaleSnap(0.25);
-    } else {
-      this.transformControl.setTranslationSnap(null);
-      this.transformControl.setRotationSnap(null);
-      this.transformControl.setScaleSnap(null);
-    }
-  }
+
 
   ngAfterViewInit() {
     this.rendererContainer.nativeElement.addEventListener('contextmenu', (e: Event) => e.preventDefault());
@@ -401,52 +318,18 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
     sphere.position.set(15, 6, 0);
     this.hRoot.add(sphere);
 
-    this.transformControl = new TransformControls(this.camera, this.renderer.domElement);
     this.orbitControls.addEventListener('change', () => {
       if (this.camera instanceof THREE.OrthographicCamera) {
         // Prevent rotating horizontally/vertically via OrbitControls when locked to an Orthographic face
         this.camera.quaternion.copy(this.lastOrthoQuaternion);
       }
     });
-    this.transformControl.addEventListener('change', () => {
-      if (this.transformControl.object) {
-        const obj = this.transformControl.object as any;
-        if (typeof obj.onTransform === 'function') {
-          obj.onTransform();
-        }
-        this.checkAndHighlightCollisions(this.transformControl.object);
-        if (this.showOverlay) {
-          this.updateTooltip(this.transformControl.object);
-        }
-      }
-    });
-
-    this.transformControl.addEventListener('dragging-changed', (event: any) => {
-      this.isDraggingTransform = event.value;
-      this.showOverlay = event.value;
-      this.orbitControls.enabled = !event.value;
-
-      if (this.showOverlay && this.transformControl.object) {
-        this.updateTooltip(this.transformControl.object);
-      } else {
-        this.cdr.detectChanges(); // force hide on release
-
-
-      }
-    });
-
-    if (typeof (this.transformControl as any).getHelper === 'function') {
-      this.scene.add((this.transformControl as any).getHelper());
-    } else {
-      this.scene.add(this.transformControl as any);
-    }
 
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown.bind(this));
   }
 
   private onPointerDown(event: PointerEvent): void {
     if (this.isDraggingShape) return;
-    if ((this.transformControl as any).axis !== null) return; // Allow gizmo translations naturally
 
     // Hide context menu automatically on any click natively
     if (this.showContextMenu) {
@@ -479,7 +362,10 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       }
 
       if (selectedObject && selectedObject !== this.hRoot) {
-        this.attachToTransform(selectedObject);
+        if (this.selectedNode !== selectedObject) {
+          if (this.selectedNode) this.clearCollisionHighlight(this.selectedNode);
+          this.selectedNode = selectedObject;
+        }
         this.checkAndHighlightCollisions(selectedObject);
 
         if (event.button === 2) {
@@ -492,13 +378,16 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       }
     } else {
       if (event.button === 0) {
-        this.detachFromTransform();
+        if (this.selectedNode) {
+          this.clearCollisionHighlight(this.selectedNode);
+          this.selectedNode = null;
+        }
         this.clearCollisionHighlights();
-      } else if (event.button === 2 && this.transformControl.object) {
+      } else if (event.button === 2 && this.selectedNode) {
         this.showContextMenu = true;
         this.contextMenuX = event.clientX;
         this.contextMenuY = event.clientY;
-        this.contextMenuObject = this.transformControl.object;
+        this.contextMenuObject = this.selectedNode;
         this.cdr.detectChanges();
       }
     }
@@ -506,9 +395,12 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
 
   deleteSelectedObject() {
     this.showContextMenu = false;
-    const obj = this.contextMenuObject || this.transformControl.object;
+    const obj = this.contextMenuObject || this.selectedNode;
     if (obj) {
-      this.detachFromTransform();
+      if (this.selectedNode === obj) {
+        this.clearCollisionHighlight(this.selectedNode);
+        this.selectedNode = null;
+      }
       const parent = obj.parent;
       if (parent) {
         parent.remove(obj);
@@ -614,11 +506,6 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   private updateControlCameras() {
     this.orbitControls.object = this.camera;
     this.orbitControls.update();
-
-    // Fallback for TransformControls mapping
-    if (typeof (this.transformControl as any).camera !== 'undefined') {
-      (this.transformControl as any).camera = this.camera;
-    }
   }
 
   private animate = () => {
@@ -899,7 +786,9 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       this.hRoot.add(mesh);
     }
 
-    this.attachToTransform(mesh);
+    if (this.selectedNode) this.clearCollisionHighlight(this.selectedNode);
+    this.selectedNode = mesh;
+    this.checkAndHighlightCollisions(mesh);
     this.cdr.detectChanges(); // Sync UI Hierarchy panel
   }
 }

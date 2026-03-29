@@ -1,6 +1,6 @@
 <ng-template #nodeTemplate let-nodes>
   <ul class="hierarchy-list">
-    <li *ngFor="let node of nodes" class="hierarchy-item" [class.selected]="transformControl.object === node"
+    <li *ngFor="let node of nodes" class="hierarchy-item" [class.selected]="selectedNode === node"
       draggable="true" (dragstart)="onDragStart($event, node)" (dragover)="onDragOver($event, node)"
       (drop)="onDrop($event, node)">
 
@@ -58,16 +58,7 @@
     </div>
   </div>
 
-  <div class="transform-overlay" *ngIf="showOverlay" [style.left.px]="overlayX" [style.top.px]="overlayY">
-    <div class="tooltip-values">
-      <div class="tooltip-row"><span class="axis-label x">X</span> {{ tooltipData.x | number:'1.2-2' }}{{
-        currentTransformMode === 'rotate' ? '°' : '' }}</div>
-      <div class="tooltip-row"><span class="axis-label y">Y</span> {{ tooltipData.y | number:'1.2-2' }}{{
-        currentTransformMode === 'rotate' ? '°' : '' }}</div>
-      <div class="tooltip-row"><span class="axis-label z">Z</span> {{ tooltipData.z | number:'1.2-2' }}{{
-        currentTransformMode === 'rotate' ? '°' : '' }}</div>
-    </div>
-  </div>
+
 
   <div class="context-menu" *ngIf="showContextMenu" [style.left.px]="contextMenuX" [style.top.px]="contextMenuY">
     <div class="menu-item delete" (click)="deleteSelectedObject()">
@@ -85,23 +76,7 @@
         <path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18" />
       </svg>
     </button>
-    <div class="divider"></div>
-    <button (click)="setTransformMode('translate')" [class.active]="currentTransformMode === 'translate'"
-      title="Translate">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M19 9l3 3-3 3M9 19l3 3 3-3M2 12h20M12 2v20" />
-      </svg>
-    </button>
-    <button (click)="setTransformMode('rotate')" [class.active]="currentTransformMode === 'rotate'" title="Rotate">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 12a9 9 0 11-9-9c2.5 0 4.8 1 6.5 2.7l2.5 2.3M21 12V3M21 12h-9" />
-      </svg>
-    </button>
-    <button (click)="setTransformMode('scale')" [class.active]="currentTransformMode === 'scale'" title="Scale">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 3l-6 6M21 3v6M21 3h-6M3 21l6-6M3 21v-6M3 21h6M14.5 9.5L9.5 14.5" />
-      </svg>
-    </button>
+
     <div class="divider"></div>
     <button (click)="toggleSnap()" [class.active]="snapEnabled" title="Toggle Snap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
