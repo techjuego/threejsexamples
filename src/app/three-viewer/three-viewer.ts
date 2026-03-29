@@ -8,54 +8,6 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import ViewCubeControls from './view-cube-controls';
 import { InfiniteGridHelper } from './infinite-grid-helper';
 
-export class ParametricShelf extends THREE.Group {
-  private frameGeo = new THREE.BoxGeometry(10, 10, 5);
-  private frameMat = new THREE.MeshStandardMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.2 });
-  private frame = new THREE.Mesh(this.frameGeo, this.frameMat);
-
-  constructor() {
-    super();
-    this.add(this.frame);
-
-    const shelfCount = 3;
-    for (let i = 0; i < shelfCount; i++) {
-      const shelfGeo = new THREE.BoxGeometry(9.8, 0.4, 4.8);
-      const shelfMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1 });
-      const shelf = new THREE.Mesh(shelfGeo, shelfMat);
-      shelf.name = `Shelf ${i + 1}`;
-      this.add(shelf);
-    }
-    this.updateLayout();
-  }
-
-  onTransform() {
-    this.updateLayout();
-  }
-
-  updateLayout() {
-    // If the scale becomes very small or flips, protect it from dividing by 0
-    let scY = this.scale.y;
-    if (Math.abs(scY) < 0.001) scY = 0.001 * Math.sign(scY) || 0.001;
-
-    const invY = 1.0 / scY;
-
-    const shelves = this.children.filter(c => c.name.includes('Shelf')) as THREE.Mesh[];
-
-    const totalHeight = 10;
-    const spacing = totalHeight / (shelves.length + 1);
-
-    for (let i = 0; i < shelves.length; i++) {
-      const shelf = shelves[i];
-      // Override local space to precisely center it natively on the cabinet
-      shelf.position.x = 0;
-      shelf.position.z = 0;
-      shelf.rotation.set(0, 0, 0);
-
-      shelf.scale.y = invY;
-      shelf.position.y = -5 + ((i + 1) * spacing);
-    }
-  }
-}
 
 @Component({
   selector: 'app-three-viewer',
@@ -173,9 +125,7 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
 
         node.attach(this.draggedNode);
 
-        // Notify parametric shelves about changes dynamically
-        if (oldParent instanceof ParametricShelf) oldParent.updateLayout();
-        if (node instanceof ParametricShelf) node.updateLayout();
+
       }
     }
     this.draggedNode = null;
@@ -235,18 +185,9 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
     const obj = this.transformControl.object;
     if (!obj) return;
 
-    // We restrict shelves and cabinets to only rotate around the vertical Y axis
-    const isRestricted = obj instanceof ParametricShelf || obj.name.includes('Shelf') || obj.name.includes('Cabinet');
-
-    if (this.currentTransformMode === 'rotate' && isRestricted) {
-      this.transformControl.showX = false;
-      this.transformControl.showY = true;
-      this.transformControl.showZ = false;
-    } else {
-      this.transformControl.showX = true;
-      this.transformControl.showY = true;
-      this.transformControl.showZ = true;
-    }
+    this.transformControl.showX = true;
+    this.transformControl.showY = true;
+    this.transformControl.showZ = true;
   }
 
   private attachToTransform(obj: THREE.Object3D) {
@@ -490,13 +431,7 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       } else {
         this.cdr.detectChanges(); // force hide on release
 
-        // Auto-Snap products perfectly when translation gizmo is released!
-        if (!event.value && this.transformControl.object) {
-          const obj = this.transformControl.object as THREE.Mesh;
-          if (obj && (obj.name.includes('Bottom Box') || obj.name.includes('Top Can'))) {
-            this.autoSnapProductToShelf(obj);
-          }
-        }
+
       }
     });
 
@@ -509,81 +444,16 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown.bind(this));
   }
 
-  private autoSnapProductToShelf(mesh: THREE.Mesh) {
-    mesh.updateMatrixWorld(true);
-    const meshWorldPos = new THREE.Vector3();
-    mesh.getWorldPosition(meshWorldPos);
-
-    let targetParent: THREE.Object3D | null = null;
-    let minDist = Infinity;
-
-    // Scan all parametric cabinets mathematically querying their internal shelves for vertical proximity
-    const cabinets = this.hRoot.children.filter(c => c instanceof ParametricShelf);
-    for (const cabinet of cabinets) {
-      cabinet.updateMatrixWorld(true);
-      const cabBox = new THREE.Box3().setFromObject(cabinet);
-      if (cabBox.containsPoint(meshWorldPos) || cabBox.intersectsBox(new THREE.Box3().setFromObject(mesh))) {
-        const shelves = cabinet.children.filter(c => c.name.includes('Shelf') || c.name === 'Cabinet Frame Top');
-        for (const s of shelves) {
-          s.updateMatrixWorld(true);
-          const sPos = new THREE.Vector3();
-          s.getWorldPosition(sPos);
-          // Verify the shelf physically exists beneath the product bounding center gracefully
-          if (sPos.y <= meshWorldPos.y + 1.0) {
-            const dist = Math.abs(meshWorldPos.y - sPos.y);
-            if (dist < minDist) {
-              minDist = dist;
-              targetParent = s;
-            }
-          }
-        }
-      }
-    }
-
-    if (targetParent) {
-      // Inherit intentional 3D world drag manipulation offsets
-      targetParent.attach(mesh);
-
-      let parentWidth = 9.6;
-      if ((targetParent as THREE.Mesh).geometry) {
-        (targetParent as THREE.Mesh).geometry.computeBoundingBox();
-        const pbox = (targetParent as THREE.Mesh).geometry.boundingBox;
-        if (pbox) parentWidth = pbox.max.x - pbox.min.x;
-      }
-
-      mesh.geometry.computeBoundingBox();
-      const bbox = mesh.geometry.boundingBox!;
-      const newWidth = bbox.max.x - bbox.min.x;
-      const newHeight = bbox.max.y - bbox.min.y;
-
-      // Prevent hanging off physical shelf edges intentionally
-      if (mesh.position.x + (newWidth / 2) > (parentWidth / 2)) {
-        mesh.position.x = (parentWidth / 2) - (newWidth / 2);
-      }
-      if (mesh.position.x - (newWidth / 2) < -(parentWidth / 2)) {
-        mesh.position.x = -(parentWidth / 2) + (newWidth / 2);
-      }
-
-      // Reset depth and rotation native flush
-      mesh.position.z = 0;
-      mesh.rotation.set(0, 0, 0);
-
-      // Lock strict baseline height physically exactly corresponding to geometrical scale boundaries
-      let baseLocalY = 0.1 + (newHeight / 2);
-      mesh.position.y = baseLocalY;
-    }
-  }
-
   private onPointerDown(event: PointerEvent): void {
     if (this.isDraggingShape) return;
     if ((this.transformControl as any).axis !== null) return; // Allow gizmo translations naturally
-    
+
     // Hide context menu automatically on any click natively
     if (this.showContextMenu) {
       this.showContextMenu = false;
       this.cdr.detectChanges();
     }
-    
+
     if (event.button !== 0 && event.button !== 2) return;
 
     const container = this.rendererContainer.nativeElement;
@@ -593,9 +463,9 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
 
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const intersects = this.raycaster.intersectObject(this.hRoot, true);
-    
-    const validIntersects = intersects.filter(hit => 
-      hit.object !== this.ghostMesh && 
+
+    const validIntersects = intersects.filter(hit =>
+      hit.object !== this.ghostMesh &&
       hit.object !== this.collisionHelper &&
       hit.object.visible
     );
@@ -604,34 +474,33 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       let selectedObject: THREE.Object3D | null = validIntersects[0].object;
 
       while (selectedObject && selectedObject !== this.hRoot) {
-        if (selectedObject instanceof ParametricShelf) break;
-        if (selectedObject.name.includes('Shelf') || selectedObject.name.includes('Box') || selectedObject.name.includes('Can') || selectedObject.name.includes('Sphere') || selectedObject.name.includes('Cylinder') || selectedObject.name.includes('Cone')) break;
+        if (selectedObject.name.includes('Box') || selectedObject.name.includes('Can') || selectedObject.name.includes('Sphere') || selectedObject.name.includes('Cylinder') || selectedObject.name.includes('Cone')) break;
         selectedObject = selectedObject.parent;
       }
 
       if (selectedObject && selectedObject !== this.hRoot) {
         this.attachToTransform(selectedObject);
         this.checkAndHighlightCollisions(selectedObject);
-        
+
         if (event.button === 2) {
-           this.showContextMenu = true;
-           this.contextMenuX = event.clientX;
-           this.contextMenuY = event.clientY;
-           this.contextMenuObject = selectedObject;
-           this.cdr.detectChanges();
+          this.showContextMenu = true;
+          this.contextMenuX = event.clientX;
+          this.contextMenuY = event.clientY;
+          this.contextMenuObject = selectedObject;
+          this.cdr.detectChanges();
         }
       }
     } else {
-        if (event.button === 0) {
-           this.detachFromTransform();
-           this.clearCollisionHighlights();
-        } else if (event.button === 2 && this.transformControl.object) {
-           this.showContextMenu = true;
-           this.contextMenuX = event.clientX;
-           this.contextMenuY = event.clientY;
-           this.contextMenuObject = this.transformControl.object;
-           this.cdr.detectChanges();
-        }
+      if (event.button === 0) {
+        this.detachFromTransform();
+        this.clearCollisionHighlights();
+      } else if (event.button === 2 && this.transformControl.object) {
+        this.showContextMenu = true;
+        this.contextMenuX = event.clientX;
+        this.contextMenuY = event.clientY;
+        this.contextMenuObject = this.transformControl.object;
+        this.cdr.detectChanges();
+      }
     }
   }
 
@@ -643,10 +512,6 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       const parent = obj.parent;
       if (parent) {
         parent.remove(obj);
-        // Auto-recalculate surrounding parameter boundaries
-        if (parent instanceof ParametricShelf) {
-          parent.updateLayout();
-        }
       }
 
       // Explicit garbage collection unmounting to prevent ghost GPU allocations natively!
@@ -846,10 +711,7 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       case 'Sphere': geo = new THREE.SphereGeometry(5, 32, 32); break;
       case 'Cylinder': geo = new THREE.CylinderGeometry(5, 5, 10, 32); break;
       case 'Cone': geo = new THREE.ConeGeometry(5, 10, 32); break;
-      case 'Cabinet': geo = new THREE.BoxGeometry(10, 10, 5); break;
-      case 'Shelf': geo = new THREE.BoxGeometry(9.8, 0.4, 4.8); break;
-      case 'Bottom Box': geo = new THREE.BoxGeometry(3.5, 2.5, 3.5); break;
-      case 'Top Can': geo = new THREE.CylinderGeometry(0.8, 0.8, 2.0, 32); break;
+
       case 'Box': default: geo = new THREE.BoxGeometry(10, 10, 10); break;
     }
 
@@ -888,37 +750,6 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       const hit = validIntersects[0];
       dropPosition.copy(hit.point);
 
-      // Auto-preview perfect Shelf resting for Products during drag
-      if (this.draggedShapeType === 'Bottom Box' || this.draggedShapeType === 'Top Can' || this.draggedShapeType === 'Shelf') {
-        if (hit.object.name.includes('Cabinet Frame') && hit.object.parent instanceof ParametricShelf) {
-          const cabinet = hit.object.parent;
-          const shelves = cabinet.children.filter(c => c.name.includes('Shelf') || c.name === 'Cabinet Frame Top');
-          let closestShelf: THREE.Object3D | null = null;
-          let minDist = Infinity;
-          for (let s of shelves) {
-            s.updateMatrixWorld(true);
-            const shelfWorldPos = new THREE.Vector3();
-            s.getWorldPosition(shelfWorldPos);
-            const dist = Math.abs(hit.point.y - shelfWorldPos.y);
-            if (dist < minDist) { minDist = dist; closestShelf = s; }
-          }
-          if (closestShelf) {
-            closestShelf.updateMatrixWorld(true);
-            const sbox = new THREE.Box3().setFromObject(closestShelf);
-            let extentsY = 0;
-            if (this.ghostMesh && this.ghostMesh.geometry) {
-              this.ghostMesh.geometry.computeBoundingBox();
-              const bbox = this.ghostMesh.geometry.boundingBox;
-              if (bbox) extentsY = (bbox.max.y - bbox.min.y) / 2;
-            }
-            // Preview precisely resting mathematically flushed against the global highest Y-edge of the shelf!
-            dropPosition.y = sbox.max.y + extentsY;
-            // Lock visual depth preview to the exact physical internal shelf plane Z-axis natively
-            dropPosition.z = (new THREE.Vector3().setFromMatrixPosition(closestShelf.matrixWorld)).z;
-            return dropPosition;
-          }
-        }
-      }
 
       if (hit.face) {
         const hitNormal = hit.face.normal.clone();
@@ -1028,52 +859,7 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
 
     let targetParent: THREE.Object3D = this.hRoot;
 
-    if (shapeType === 'Shelf') {
-      const intersects = this.raycaster.intersectObject(this.hRoot, true);
-      if (intersects.length > 0) {
-        let current: THREE.Object3D | null = intersects[0].object;
-        while (current && current !== this.hRoot) {
-          if (current instanceof ParametricShelf) {
-            targetParent = current;
-            break;
-          }
-          current = current.parent;
-        }
-      }
-    } else if (shapeType === 'Bottom Box' || shapeType === 'Top Can') {
-      // Auto-detect nearby shelves for Products
-      const intersects = this.raycaster.intersectObject(this.hRoot, true);
-      const valid = intersects.filter(h => h.object !== this.ghostMesh && h.object !== this.collisionHelper && h.object.visible);
 
-      if (valid.length > 0) {
-        const hitObj = valid[0].object;
-        if ((hitObj.name.includes('Shelf') || hitObj.name === 'Cabinet Frame Top') && hitObj.parent instanceof ParametricShelf) {
-          targetParent = hitObj;
-        } else if (hitObj.name.includes('Cabinet Frame') && hitObj.parent instanceof ParametricShelf) {
-          // Ray hit the back/side wall of Cabinet! Mathematically sort shelves by Y distance and find closest.
-          const cabinet = hitObj.parent as ParametricShelf;
-          const shelves = cabinet.children.filter(c => c.name.includes('Shelf') || c.name === 'Cabinet Frame Top');
-          let closestShelf: THREE.Object3D | null = null;
-          let minDist = Infinity;
-
-          for (let s of shelves) {
-            s.updateMatrixWorld(true);
-            const shelfWorldPos = new THREE.Vector3();
-            s.getWorldPosition(shelfWorldPos);
-            const dist = Math.abs(valid[0].point.y - shelfWorldPos.y);
-            if (dist < minDist) {
-              minDist = dist;
-              closestShelf = s;
-            }
-          }
-          if (closestShelf) {
-            targetParent = closestShelf;
-          }
-        } else {
-          targetParent = hitObj;
-        }
-      }
-    }
 
     this.removeGhostShape();
     this.spawnShape(shapeType, dropPosition, targetParent);
@@ -1082,94 +868,31 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   spawnShape(type: string, position: THREE.Vector3, targetParent: THREE.Object3D = this.hRoot) {
     let mesh: THREE.Object3D;
 
-    if (type === 'Cabinet') {
-      mesh = new ParametricShelf();
-      mesh.position.copy(position);
-    } else {
-      let geo: THREE.BufferGeometry;
-      let mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1 });
+    let geo: THREE.BufferGeometry;
+    let mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1 });
 
-      switch (type) {
-        case 'Sphere':
-          geo = new THREE.SphereGeometry(5, 32, 32);
-          break;
-        case 'Cylinder':
-          geo = new THREE.CylinderGeometry(5, 5, 10, 32);
-          break;
-        case 'Cone':
-          geo = new THREE.ConeGeometry(5, 10, 32);
-          break;
-        case 'Shelf':
-          geo = new THREE.BoxGeometry(9.8, 0.4, 4.8);
-          break;
-        case 'Bottom Box':
-          geo = new THREE.BoxGeometry(3.5, 2.5, 3.5);
-          break;
-        case 'Top Can':
-          geo = new THREE.CylinderGeometry(0.8, 0.8, 2.0, 32);
-          break;
-        case 'Box':
-        default:
-          geo = new THREE.BoxGeometry(10, 10, 10);
-          break;
-      }
-      mesh = new THREE.Mesh(geo, mat);
-      mesh.position.copy(position);
+    switch (type) {
+      case 'Sphere':
+        geo = new THREE.SphereGeometry(5, 32, 32);
+        break;
+      case 'Cylinder':
+        geo = new THREE.CylinderGeometry(5, 5, 10, 32);
+        break;
+      case 'Cone':
+        geo = new THREE.ConeGeometry(5, 10, 32);
+        break;
+
+      case 'Box':
+      default:
+        geo = new THREE.BoxGeometry(10, 10, 10);
+        break;
     }
+    mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position);
 
     mesh.name = `${type} ${Math.floor(Math.random() * 100)}`; // Basic ID
 
-    if ((targetParent.name.includes('Shelf') || targetParent.name === 'Cabinet Frame Top') && targetParent.parent instanceof ParametricShelf) {
-      // Product targets Shelf or Roof directly! Sequentially snap from Left side -> Right side.
-      targetParent.add(mesh);
-
-      let parentWidth = 9.6;
-      if ((targetParent as THREE.Mesh).geometry) {
-        (targetParent as THREE.Mesh).geometry.computeBoundingBox();
-        const pbox = (targetParent as THREE.Mesh).geometry.boundingBox;
-        if (pbox) parentWidth = pbox.max.x - pbox.min.x;
-      }
-
-      let currentX = -(parentWidth / 2); // Far left edge of array
-      const padding = 0.2;
-
-      // Find existing dimensions on this host to stack horizontally
-      for (const child of targetParent.children) {
-        if (child !== mesh && (child as THREE.Mesh).geometry) {
-          const childMesh = child as THREE.Mesh;
-          childMesh.geometry.computeBoundingBox();
-          const bbox = childMesh.geometry.boundingBox;
-          if (bbox) {
-            const w = bbox.max.x - bbox.min.x;
-            const rightEdge = child.position.x + ((w / 2) * child.scale.x);
-            if (rightEdge > currentX) currentX = rightEdge;
-          }
-        }
-      }
-
-      const m = mesh as THREE.Mesh;
-      m.geometry.computeBoundingBox();
-      const bbox = m.geometry.boundingBox!;
-      const newWidth = bbox.max.x - bbox.min.x;
-      const newHeight = bbox.max.y - bbox.min.y;
-
-      let localX = currentX + padding + (newWidth / 2);
-
-      // Clamp to prevent spilling out the right side of the cabinet physically
-      if (localX + (newWidth / 2) > (parentWidth / 2)) {
-        localX = (parentWidth / 2) - (newWidth / 2);
-      }
-
-      // Top surface of the unscaled mesh geometry is exactly +0.1 for both Shelves and Frame Tops.
-      let baseLocalY = 0.1 + (newHeight / 2);
-
-      // Ensure perfect physical placement resting exactly directly natively to the top face mathematically!
-      mesh.position.set(localX, baseLocalY, 0);
-
-    } else if (targetParent instanceof ParametricShelf && type === 'Shelf') {
-      targetParent.add(mesh); // Lock natively into local parent coordinates
-      targetParent.updateLayout();
-    } else if (targetParent !== this.hRoot) {
+    if (targetParent !== this.hRoot) {
       this.hRoot.add(mesh); // Add to world to generate absolute matrices
       targetParent.attach(mesh); // Transfer safely without losing dropping position
     } else {

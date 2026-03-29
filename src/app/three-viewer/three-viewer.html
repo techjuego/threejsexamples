@@ -45,19 +45,10 @@
         (dragend)="onShapeDragEnd($event)">🛢️ Cylinder</div>
       <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Cone')"
         (dragend)="onShapeDragEnd($event)">🔺 Cone</div>
-      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Cabinet')"
-        (dragend)="onShapeDragEnd($event)">🚪 Cabinet</div>
-      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Shelf')"
-        (dragend)="onShapeDragEnd($event)">➖ Shelf</div>
+
     </div>
 
-    <div class="panel-header">Products</div>
-    <div class="shape-palette">
-      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Bottom Box')"
-        (dragend)="onShapeDragEnd($event)">📦 Bottom Box</div>
-      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Top Can')"
-        (dragend)="onShapeDragEnd($event)">🥫 Top Can</div>
-    </div>
+
 
     <div class="panel-header">Hierarchy</div>
     <div class="panel-content" (dragover)="onDragOver($event, hRoot)" (drop)="onDrop($event, hRoot)">
