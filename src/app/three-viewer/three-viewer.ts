@@ -24,10 +24,6 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
 
   private camera!: THREE.OrthographicCamera | THREE.PerspectiveCamera;
 
-  public showContextMenu = false;
-  public contextMenuX = 0;
-  public contextMenuY = 0;
-  public contextMenuObject: THREE.Object3D | null = null;
   private persCamera!: THREE.PerspectiveCamera;
   private orthoCamera!: THREE.OrthographicCamera;
   private frustumSize = 40;
@@ -39,22 +35,17 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   private cubeCamera!: THREE.PerspectiveCamera;
   private viewCube!: ViewCubeControls;
 
-  public selectedNode: THREE.Object3D | null = null;
   private gridHelperXZ!: InfiniteGridHelper;
   private gridHelperXY!: InfiniteGridHelper;
   private gridHelperYZ!: InfiniteGridHelper;
 
   public hRoot: THREE.Group = new THREE.Group();
 
-  private raycaster = new THREE.Raycaster();
-  private pointer = new THREE.Vector2();
-
   gridVisible = true;
   snapEnabled = false;
   private animationId!: number;
   private lastOrthoQuaternion = new THREE.Quaternion();
   private lastOrthographicFace?: number;
-  private collisionHelper: THREE.BoxHelper | null = null;
 
 
 
@@ -96,63 +87,6 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
 
   toggleSnap() {
     this.snapEnabled = !this.snapEnabled;
-  }
-
-  private clearCollisionHighlight(targetObj: THREE.Object3D) {
-    targetObj.traverse((node) => {
-      if (node instanceof THREE.Mesh && node.material && 'emissive' in node.material) {
-        node.material.emissive.setHex(0x000000);
-      }
-    });
-  }
-
-  private clearCollisionHighlights() {
-    this.hRoot.traverse((node) => {
-      if (node instanceof THREE.Mesh && node.material && 'emissive' in node.material) {
-        (node.material as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
-      }
-    });
-  }
-
-  private checkAndHighlightCollisions(targetObj: THREE.Object3D) {
-    if (!targetObj) return;
-
-    let allMeshes: THREE.Mesh[] = [];
-    this.hRoot.traverse((node) => {
-      if (node instanceof THREE.Mesh && node.visible) {
-        allMeshes.push(node);
-      }
-    });
-
-    let targetMeshes: THREE.Mesh[] = [];
-    targetObj.traverse((node) => {
-      if (node instanceof THREE.Mesh) targetMeshes.push(node);
-    });
-
-    let isOverlapping = false;
-    for (const tMesh of targetMeshes) {
-      tMesh.updateMatrixWorld(true);
-      const tBox = new THREE.Box3().setFromObject(tMesh);
-      tBox.expandByScalar(-0.1); // Snap tolerance
-
-      for (const aMesh of allMeshes) {
-        if (targetMeshes.includes(aMesh)) continue; // ignore self submeshes
-
-        const aBox = new THREE.Box3().setFromObject(aMesh);
-        if (tBox.intersectsBox(aBox)) {
-          isOverlapping = true;
-          break;
-        }
-      }
-      if (isOverlapping) break;
-    }
-
-    const collisionColor = isOverlapping ? 0xff0000 : 0x000000;
-    for (const tMesh of targetMeshes) {
-      if (tMesh.material && 'emissive' in tMesh.material) {
-        (tMesh.material as THREE.MeshStandardMaterial).emissive.setHex(collisionColor);
-      }
-    }
   }
 
 
@@ -255,100 +189,9 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       }
     });
 
-    this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown.bind(this));
   }
 
-  private onPointerDown(event: PointerEvent): void {
-    // Hide context menu automatically on any click natively
-    if (this.showContextMenu) {
-      this.showContextMenu = false;
-      this.cdr.detectChanges();
-    }
 
-    if (event.button !== 0 && event.button !== 2) return;
-
-    const container = this.rendererContainer.nativeElement;
-    const rect = container.getBoundingClientRect();
-    this.pointer.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
-    this.pointer.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
-
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    const intersects = this.raycaster.intersectObject(this.hRoot, true);
-
-    const validIntersects = intersects.filter(hit =>
-      hit.object !== this.collisionHelper &&
-      hit.object.visible
-    );
-
-    if (validIntersects.length > 0) {
-      let selectedObject: THREE.Object3D | null = validIntersects[0].object;
-
-      while (selectedObject && selectedObject !== this.hRoot) {
-        if (selectedObject.name.includes('Box') || selectedObject.name.includes('Can') || selectedObject.name.includes('Sphere') || selectedObject.name.includes('Cylinder') || selectedObject.name.includes('Cone')) break;
-        selectedObject = selectedObject.parent;
-      }
-
-      if (selectedObject && selectedObject !== this.hRoot) {
-        if (this.selectedNode !== selectedObject) {
-          if (this.selectedNode) this.clearCollisionHighlight(this.selectedNode);
-          this.selectedNode = selectedObject;
-        }
-        this.checkAndHighlightCollisions(selectedObject);
-
-        if (event.button === 2) {
-          this.showContextMenu = true;
-          this.contextMenuX = event.clientX;
-          this.contextMenuY = event.clientY;
-          this.contextMenuObject = selectedObject;
-          this.cdr.detectChanges();
-        }
-      }
-    } else {
-      if (event.button === 0) {
-        if (this.selectedNode) {
-          this.clearCollisionHighlight(this.selectedNode);
-          this.selectedNode = null;
-        }
-        this.clearCollisionHighlights();
-      } else if (event.button === 2 && this.selectedNode) {
-        this.showContextMenu = true;
-        this.contextMenuX = event.clientX;
-        this.contextMenuY = event.clientY;
-        this.contextMenuObject = this.selectedNode;
-        this.cdr.detectChanges();
-      }
-    }
-  }
-
-  deleteSelectedObject() {
-    this.showContextMenu = false;
-    const obj = this.contextMenuObject || this.selectedNode;
-    if (obj) {
-      if (this.selectedNode === obj) {
-        this.clearCollisionHighlight(this.selectedNode);
-        this.selectedNode = null;
-      }
-      const parent = obj.parent;
-      if (parent) {
-        parent.remove(obj);
-      }
-
-      // Explicit garbage collection unmounting to prevent ghost GPU allocations natively!
-      obj.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const mesh = child as THREE.Mesh;
-          if (mesh.geometry) mesh.geometry.dispose();
-          if (mesh.material) {
-            if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
-            else mesh.material.dispose();
-          }
-        }
-      });
-
-      this.contextMenuObject = null;
-      this.cdr.detectChanges();
-    }
-  };
 
   private initCubeScene(): void {
     const container = this.cubeSceneContainer.nativeElement;
