@@ -45,7 +45,6 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   private gridHelperYZ!: InfiniteGridHelper;
 
   public hRoot: THREE.Group = new THREE.Group();
-  public draggedNode: THREE.Object3D | null = null;
 
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
@@ -57,76 +56,7 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   private lastOrthographicFace?: number;
   private collisionHelper: THREE.BoxHelper | null = null;
 
-  // HIERARCHY LOGIC
-  selectNode(node: THREE.Object3D) {
-    if (!node.userData['locked'] && node.visible) {
-      if (this.selectedNode !== node) {
-        if (this.selectedNode) this.clearCollisionHighlight(this.selectedNode);
-        this.selectedNode = node;
-        this.checkAndHighlightCollisions(node);
-      }
-    }
-  }
 
-  toggleExpand(node: THREE.Object3D, event: Event) {
-    event.stopPropagation();
-    node.userData['expanded'] = !node.userData['expanded'];
-  }
-
-  toggleVisibility(node: THREE.Object3D, event: Event) {
-    event.stopPropagation();
-    node.visible = !node.visible;
-    if (!node.visible && this.selectedNode === node) {
-      this.clearCollisionHighlight(this.selectedNode);
-      this.selectedNode = null;
-      this.cdr.detectChanges();
-    }
-  }
-
-  toggleLock(node: THREE.Object3D, event: Event) {
-    event.stopPropagation();
-    node.userData['locked'] = !node.userData['locked'];
-    if (node.userData['locked'] && this.selectedNode === node) {
-      this.clearCollisionHighlight(this.selectedNode);
-      this.selectedNode = null;
-      this.cdr.detectChanges();
-    }
-  }
-
-  onDragStart(event: DragEvent, node: THREE.Object3D) {
-    this.draggedNode = node;
-    event.dataTransfer?.setData('text/plain', node.uuid);
-    event.stopPropagation();
-  }
-
-  onDragOver(event: DragEvent, node: THREE.Object3D) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-
-  onDrop(event: DragEvent, node: THREE.Object3D) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (this.draggedNode && this.draggedNode !== node) {
-      let isAncestor = false;
-      let current: THREE.Object3D | null = node;
-      while (current) {
-        if (current === this.draggedNode) {
-          isAncestor = true;
-          break;
-        }
-        current = current.parent;
-      }
-      if (!isAncestor) {
-        const oldParent = this.draggedNode.parent;
-
-        node.attach(this.draggedNode);
-
-
-      }
-    }
-    this.draggedNode = null;
-  }
 
   toggleGrid() {
     this.gridVisible = !this.gridVisible;
@@ -189,7 +119,7 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
 
     let allMeshes: THREE.Mesh[] = [];
     this.hRoot.traverse((node) => {
-      if (node instanceof THREE.Mesh && node.visible && node !== this.ghostMesh) {
+      if (node instanceof THREE.Mesh && node.visible) {
         allMeshes.push(node);
       }
     });
@@ -266,7 +196,7 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
       (this.frustumSize * aspect) / 2,
       this.frustumSize / 2,
       this.frustumSize / -2,
-      0.1,
+      -1000,
       1000
     );
 
@@ -329,8 +259,6 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
   }
 
   private onPointerDown(event: PointerEvent): void {
-    if (this.isDraggingShape) return;
-
     // Hide context menu automatically on any click natively
     if (this.showContextMenu) {
       this.showContextMenu = false;
@@ -348,7 +276,6 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
     const intersects = this.raycaster.intersectObject(this.hRoot, true);
 
     const validIntersects = intersects.filter(hit =>
-      hit.object !== this.ghostMesh &&
       hit.object !== this.collisionHelper &&
       hit.object.visible
     );
@@ -557,238 +484,5 @@ export class ThreeViewer implements AfterViewInit, OnDestroy {
     }
   }
 
-  // SHAPE PALETTE DRAG & DROP LOGIC
-  private ghostMesh: THREE.Mesh | null = null;
-  private isDraggingShape = false;
 
-  private draggedShapeType: string = '';
-
-  onShapeDragStart(event: DragEvent, shapeType: string) {
-    this.isDraggingShape = true;
-    this.draggedShapeType = shapeType;
-    event.dataTransfer?.setData('shape-type', shapeType);
-
-    const emptyImage = new Image();
-    emptyImage.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-    event.dataTransfer?.setDragImage(emptyImage, 0, 0);
-
-    this.createGhostShape(shapeType);
-    event.stopPropagation();
-  }
-
-  onShapeDragEnd(event: DragEvent) {
-    this.isDraggingShape = false;
-    this.draggedShapeType = '';
-    this.removeGhostShape();
-  }
-
-  createGhostShape(type: string) {
-    this.removeGhostShape();
-
-    let geo: THREE.BufferGeometry;
-    let mat = new THREE.MeshBasicMaterial({
-      color: 0x00ffaa,
-      wireframe: false,
-      transparent: true,
-      opacity: 0.5,
-      depthTest: false
-    });
-
-    switch (type) {
-      case 'Sphere': geo = new THREE.SphereGeometry(5, 32, 32); break;
-      case 'Cylinder': geo = new THREE.CylinderGeometry(5, 5, 10, 32); break;
-      case 'Cone': geo = new THREE.ConeGeometry(5, 10, 32); break;
-
-      case 'Box': default: geo = new THREE.BoxGeometry(10, 10, 10); break;
-    }
-
-    this.ghostMesh = new THREE.Mesh(geo, mat);
-    this.ghostMesh.raycast = () => { };
-    this.scene.add(this.ghostMesh);
-  }
-
-  removeGhostShape() {
-    if (this.ghostMesh) {
-      this.scene.remove(this.ghostMesh);
-      this.ghostMesh.geometry.dispose();
-      (this.ghostMesh.material as THREE.Material).dispose();
-      this.ghostMesh = null;
-    }
-  }
-
-  private getCanvasIntersection(event: DragEvent): THREE.Vector3 {
-    const container = this.rendererContainer.nativeElement;
-    const rect = container.getBoundingClientRect();
-    this.pointer.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
-    this.pointer.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
-
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    let dropPosition = new THREE.Vector3();
-
-    // 1. Raycast real 3D objects in the scene first
-    const intersects = this.raycaster.intersectObject(this.hRoot, true);
-    const validIntersects = intersects.filter(hit =>
-      hit.object !== this.ghostMesh &&
-      hit.object !== this.collisionHelper &&
-      hit.object.visible
-    );
-
-    if (validIntersects.length > 0) {
-      const hit = validIntersects[0];
-      dropPosition.copy(hit.point);
-
-
-      if (hit.face) {
-        const hitNormal = hit.face.normal.clone();
-        const nMat = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
-        hitNormal.applyMatrix3(nMat).normalize();
-
-        // Dynamically offset by the size of the ghost shape we are holding!
-        if (this.ghostMesh && this.ghostMesh.geometry) {
-          this.ghostMesh.geometry.computeBoundingBox();
-          const bbox = this.ghostMesh.geometry.boundingBox;
-          if (bbox) {
-            const extents = new THREE.Vector3(
-              (bbox.max.x - bbox.min.x) / 2,
-              (bbox.max.y - bbox.min.y) / 2,
-              (bbox.max.z - bbox.min.z) / 2
-            );
-            // Calculate exactly how far to push it out along the normal to rest perfectly
-            const offsetDist = Math.abs(hitNormal.x * extents.x) +
-              Math.abs(hitNormal.y * extents.y) +
-              Math.abs(hitNormal.z * extents.z);
-            dropPosition.addScaledVector(hitNormal, offsetDist);
-          }
-        }
-      }
-    } else {
-      // 2. We are dropping into empty space -> use the mathematical Grid Planes
-      let activeGrid = this.gridHelperXZ;
-      let mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-
-      if (this.gridHelperXY.visible) {
-        activeGrid = this.gridHelperXY;
-        mathPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-      } else if (this.gridHelperYZ.visible) {
-        activeGrid = this.gridHelperYZ;
-        mathPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
-      }
-
-      const intersection = this.raycaster.ray.intersectPlane(mathPlane, dropPosition);
-      if (!intersection) {
-        dropPosition = new THREE.Vector3();
-        this.raycaster.ray.at(30, dropPosition);
-      }
-
-      if (!this.snapEnabled) {
-        if (this.ghostMesh && this.ghostMesh.geometry) {
-          this.ghostMesh.geometry.computeBoundingBox();
-          const bbox = this.ghostMesh.geometry.boundingBox;
-          if (bbox) {
-            if (activeGrid === this.gridHelperXZ) dropPosition.y += (bbox.max.y - bbox.min.y) / 2;
-            else if (activeGrid === this.gridHelperXY) dropPosition.z += (bbox.max.z - bbox.min.z) / 2;
-            else if (activeGrid === this.gridHelperYZ) dropPosition.x += (bbox.max.x - bbox.min.x) / 2;
-          }
-        } else {
-          if (activeGrid === this.gridHelperXZ) dropPosition.y += 5;
-          else if (activeGrid === this.gridHelperXY) dropPosition.z += 5;
-          else if (activeGrid === this.gridHelperYZ) dropPosition.x += 5;
-        }
-      }
-    }
-
-    if (this.snapEnabled) {
-      dropPosition.x = Math.round(dropPosition.x);
-      dropPosition.y = Math.round(dropPosition.y);
-      dropPosition.z = Math.round(dropPosition.z);
-    }
-
-    return dropPosition;
-  }
-
-  onCanvasDragOver(event: DragEvent) {
-    event.preventDefault();
-    if (this.ghostMesh) {
-      const dropPosition = this.getCanvasIntersection(event);
-      this.ghostMesh.position.copy(dropPosition);
-      this.ghostMesh.updateMatrixWorld(true);
-
-      const ghostBox = new THREE.Box3().setFromObject(this.ghostMesh);
-      ghostBox.expandByScalar(-0.1); // Tolerance to allow snapping perfectly side-by-side without triggering collision
-
-      let isOverlapping = false;
-      for (const child of this.hRoot.children) {
-        if (child.visible) {
-          const childBox = new THREE.Box3().setFromObject(child);
-          if (ghostBox.intersectsBox(childBox)) {
-            isOverlapping = true;
-            break;
-          }
-        }
-      }
-
-      const material = this.ghostMesh.material as THREE.MeshBasicMaterial;
-      if (isOverlapping) {
-        material.color.setHex(0xff3333); // Red collision warning
-      } else {
-        material.color.setHex(0x00ffaa); // Green safe drop
-      }
-    }
-  }
-
-  onCanvasDrop(event: DragEvent) {
-    event.preventDefault();
-    const shapeType = event.dataTransfer?.getData('shape-type');
-    if (!shapeType) return;
-
-    this.isDraggingShape = false;
-    const dropPosition = this.getCanvasIntersection(event);
-
-    let targetParent: THREE.Object3D = this.hRoot;
-
-
-
-    this.removeGhostShape();
-    this.spawnShape(shapeType, dropPosition, targetParent);
-  }
-
-  spawnShape(type: string, position: THREE.Vector3, targetParent: THREE.Object3D = this.hRoot) {
-    let mesh: THREE.Object3D;
-
-    let geo: THREE.BufferGeometry;
-    let mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1 });
-
-    switch (type) {
-      case 'Sphere':
-        geo = new THREE.SphereGeometry(5, 32, 32);
-        break;
-      case 'Cylinder':
-        geo = new THREE.CylinderGeometry(5, 5, 10, 32);
-        break;
-      case 'Cone':
-        geo = new THREE.ConeGeometry(5, 10, 32);
-        break;
-
-      case 'Box':
-      default:
-        geo = new THREE.BoxGeometry(10, 10, 10);
-        break;
-    }
-    mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(position);
-
-    mesh.name = `${type} ${Math.floor(Math.random() * 100)}`; // Basic ID
-
-    if (targetParent !== this.hRoot) {
-      this.hRoot.add(mesh); // Add to world to generate absolute matrices
-      targetParent.attach(mesh); // Transfer safely without losing dropping position
-    } else {
-      this.hRoot.add(mesh);
-    }
-
-    if (this.selectedNode) this.clearCollisionHighlight(this.selectedNode);
-    this.selectedNode = mesh;
-    this.checkAndHighlightCollisions(mesh);
-    this.cdr.detectChanges(); // Sync UI Hierarchy panel
-  }
 }

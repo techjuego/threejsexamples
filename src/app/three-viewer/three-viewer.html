@@ -1,62 +1,4 @@
-<ng-template #nodeTemplate let-nodes>
-  <ul class="hierarchy-list">
-    <li *ngFor="let node of nodes" class="hierarchy-item" [class.selected]="selectedNode === node"
-      draggable="true" (dragstart)="onDragStart($event, node)" (dragover)="onDragOver($event, node)"
-      (drop)="onDrop($event, node)">
-
-      <div class="node-content" [class.locked]="node.userData['locked']" [class.hidden]="!node.visible"
-        (click)="selectNode(node)">
-        <span class="expand-icon" (click)="toggleExpand(node, $event)">
-          <span *ngIf="node.children.length">{{ node.userData['expanded'] ? '▼' : '▶' }}</span>
-          <span *ngIf="!node.children.length" class="empty-icon"></span>
-        </span>
-
-        <span class="node-name">{{ node.name || node.type }}</span>
-
-        <div class="actions">
-          <button class="action-btn" (click)="toggleLock(node, $event)"
-            [title]="node.userData['locked'] ? 'Unlock' : 'Lock'">
-            {{ node.userData['locked'] ? '🔒' : '🔓' }}
-          </button>
-          <button class="action-btn" (click)="toggleVisibility(node, $event)" [title]="node.visible ? 'Hide' : 'Show'">
-            {{ node.visible ? '👁️' : '👁️‍🗨️' }}
-          </button>
-        </div>
-      </div>
-
-      <!-- Recursive Children -->
-      <ng-container *ngIf="node.userData['expanded'] && node.children.length">
-        <ng-container *ngTemplateOutlet="nodeTemplate; context: { $implicit: node.children }"></ng-container>
-      </ng-container>
-    </li>
-  </ul>
-</ng-template>
-
 <div class="three-container">
-
-  <div class="hierarchy-panel">
-    <div class="panel-header">Add Shape</div>
-    <div class="shape-palette">
-      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Box')"
-        (dragend)="onShapeDragEnd($event)">📦 Box</div>
-      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Sphere')"
-        (dragend)="onShapeDragEnd($event)">⚽ Sphere</div>
-      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Cylinder')"
-        (dragend)="onShapeDragEnd($event)">🛢️ Cylinder</div>
-      <div class="shape-item" draggable="true" (dragstart)="onShapeDragStart($event, 'Cone')"
-        (dragend)="onShapeDragEnd($event)">🔺 Cone</div>
-
-    </div>
-
-
-
-    <div class="panel-header">Hierarchy</div>
-    <div class="panel-content" (dragover)="onDragOver($event, hRoot)" (drop)="onDrop($event, hRoot)">
-      <ng-container *ngIf="hRoot">
-        <ng-container *ngTemplateOutlet="nodeTemplate; context: { $implicit: hRoot.children }"></ng-container>
-      </ng-container>
-    </div>
-  </div>
 
 
 
@@ -66,8 +8,7 @@
     </div>
   </div>
 
-  <div id="app" class="main-scene" #rendererContainer (dragover)="onCanvasDragOver($event)"
-    (drop)="onCanvasDrop($event)">
+  <div id="app" class="main-scene" #rendererContainer>
   </div>
 
   <div class="controls-toolbar">
